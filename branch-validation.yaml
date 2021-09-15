@@ -1,0 +1,47 @@
+steps:
+- task: PowerShell@2
+  inputs:
+    targetType: 'inline'
+    script: |
+      function Check-Files {
+          param (
+              [string]$pathToMatch
+          )
+          $targetBranch = "$(System.PullRequest.TargetBranch)".Replace("refs/heads", "origin")
+          $sourceBranch = "$(System.PullRequest.SourceBranch)".Replace("refs/heads", "origin")
+          echo "TargetBranch $targetBranch and SourceBranch $sourceBranch to create the diff"
+          # displays all modified/added/deleted files that are different between source and target branch
+          $files=git diff --name-only "$targetBranch...$sourceBranch"
+          if ($files -is [String])
+          {
+              echo "Only one file returned from diff. Turning that file into a string array"
+              [String[]]$files = $files
+          }
+
+          $count=$files.Length
+          echo "Checking a total of $count files"
+      
+          For ($i=0; $i -lt $count; $i++)
+          {
+              $fileName = $files[$i]
+              echo "Checking file $fileName against path $pathToMatch"
+              if (!$fileName.StartsWith($pathToMatch))
+              {
+                  Write-Host "##vso[task.LogIssue type=error;]Modified path $fileName does not match the path $pathToMatch for the target branch $targetBranch for this PR. Please check that your target branch is set correctly"
+                  exit 1
+              }
+          }
+          
+          echo "All files passed successfully"
+      }
+
+      $targetBranch = "$(System.PullRequest.TargetBranch)"
+      echo "Checking Target Branch $targetBranch against known dev branches"
+      switch ($targetBranch) {
+          # Create one function call per branch path you'd like to validate
+          {$_ -eq "refs/heads/*"} {Check-Files -pathToMatch "src/"}
+          default {
+                Write-Host "##vso[task.LogIssue type=error;]Target branch $targetBranch did not match any known dev branches! Please check the target branch."
+                exit 1
+            }
+      }
