@@ -1,0 +1,30 @@
+steps:
+- task: PowerShell@2
+  displayName: 'Attach pull request tags to the CI Build'
+  env:
+    SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+  inputs:
+    targetType: 'inline'
+    script: |
+      $repositoryId = $env:Build_Repository_ID
+      $teamProject = $env:System_TeamProject
+      $env:Build_SourceVersionMessage -match "Merged PR (?<prId>.*): "
+      if ($matches) {
+        $pullRequestId = $matches['prId']
+        echo "Pull Request ID $pullRequestId found"
+        $url = "$(System.TeamFoundationCollectionUri)$teamProject/_apis/git/repositories/$repositoryId/pullRequests/$pullRequestId/labels?api-version=6.0-preview.1"
+        echo "Hitting the API endpoint for PR tags $url"
+        $header = @{ Authorization = "Bearer $env:SYSTEM_ACCESSTOKEN" }
+        $refs = Invoke-RestMethod -Uri $url -Method Get -Headers $header -ContentType "application/json"
+        if ($refs.count -eq 0) {
+          echo "No tags found. None added to build"
+          exit
+        }
+        $tags = $refs.value.name
+        foreach($tag in $tags) {
+          Write-Host "##vso[build.addbuildtag]$tag"
+        }
+      }
+      else {
+        echo "No pull request ID found"
+      }
